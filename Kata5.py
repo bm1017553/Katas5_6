@@ -11,12 +11,16 @@ URLS = [
 ]
 
 
+# Timeout settings (connect timeout, read timeout)
+REQUEST_TIMEOUT = (5, 20)  # 5s to connect, 20s to read response
+
+
 def fetch_url(url):
     """
-    Fetch data from a single URL.
+    Fetch data from a single URL with timeout handling.
     """
     try:
-        response = requests.get(url, timeout=30)
+        response = requests.get(url, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
 
         return {
@@ -26,10 +30,22 @@ def fetch_url(url):
             "preview": response.text[:500]
         }
 
+    except requests.exceptions.Timeout:
+        return {
+            "url": url,
+            "error": f"Request timed out after {REQUEST_TIMEOUT} seconds"
+        }
+
+    except requests.exceptions.HTTPError as e:
+        return {
+            "url": url,
+            "error": f"HTTP error: {str(e)}"
+        }
+
     except requests.exceptions.RequestException as e:
         return {
             "url": url,
-            "error": str(e)
+            "error": f"Request failed: {str(e)}"
         }
 
 
@@ -41,7 +57,8 @@ def main():
     max_workers = min(len(URLS), cpu_count * 5)
 
     print(f"CPU cores detected : {cpu_count}")
-    print(f"Thread pool size   : {max_workers}\n")
+    print(f"Thread pool size   : {max_workers}")
+    print(f"Request timeout    : connect={REQUEST_TIMEOUT[0]}s, read={REQUEST_TIMEOUT[1]}s\n")
 
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
 
@@ -51,10 +68,9 @@ def main():
         }
 
         for future in as_completed(future_to_url):
-            result = future.result()
-            results.append(result)
+            results.append(future.result())
 
-    # Print results
+    # Output results
     for result in results:
         print("=" * 80)
         print(f"URL: {result['url']}")
