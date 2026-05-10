@@ -12,17 +12,19 @@ URLS = [
     "https://exoplanetarchive.ipac.caltech.edu/cgi-bin/nstedAPI/nph-nstedAPI?table=cumulative&where=koi_prad<2 and koi_teq>180 and koi_teq<303 and koi_disposition like 'CANDIDATE'"
 ]
 
-REQUEST_TIMEOUT = (5, 20)
+# Timeout: (connect timeout, read timeout)
+REQUEST_TIMEOUT = (5, 15)
 
 
 def fetch_and_parse(url):
     try:
+        # --- REQUEST WITH TIMEOUT ---
         response = requests.get(url, timeout=REQUEST_TIMEOUT)
         response.raise_for_status()
 
         text = response.text
 
-        # Try parsing CSV into DataFrame
+        # --- PARSE DATAFRAME ---
         df = pd.read_csv(StringIO(text))
 
         return {
@@ -33,22 +35,39 @@ def fetch_and_parse(url):
             "dataframe": df
         }
 
-    except pd.errors.EmptyDataError:
-        return {
-            "url": url,
-            "error": "No data returned (empty dataset)"
-        }
-
+    # --- TIMEOUT HANDLING ---
     except requests.exceptions.Timeout:
         return {
             "url": url,
-            "error": f"Request timed out after {REQUEST_TIMEOUT}"
+            "error": f"Timeout: request exceeded {REQUEST_TIMEOUT} (connect, read)"
         }
 
+    # --- HTTP ERRORS ---
+    except requests.exceptions.HTTPError as e:
+        return {
+            "url": url,
+            "error": f"HTTP error: {str(e)}"
+        }
+
+    # --- OTHER REQUEST FAILURES ---
+    except requests.exceptions.RequestException as e:
+        return {
+            "url": url,
+            "error": f"Request failed: {str(e)}"
+        }
+
+    # --- EMPTY OR BAD CSV ---
+    except pd.errors.EmptyDataError:
+        return {
+            "url": url,
+            "error": "Empty dataset returned"
+        }
+
+    # --- GENERIC FALLBACK ---
     except Exception as e:
         return {
             "url": url,
-            "error": str(e)
+            "error": f"Unexpected error: {str(e)}"
         }
 
 
@@ -56,7 +75,8 @@ def main():
     cpu_count = os.cpu_count() or 1
     max_workers = min(len(URLS), cpu_count * 5)
 
-    print(f"Thread pool size: {max_workers}\n")
+    print(f"Thread pool size: {max_workers}")
+    print(f"Timeout (connect, read): {REQUEST_TIMEOUT}\n")
 
     results = []
 
@@ -66,7 +86,7 @@ def main():
         for future in as_completed(futures):
             results.append(future.result())
 
-    # Display results
+    # --- OUTPUT ---
     for result in results:
         print("=" * 80)
         print(f"URL: {result['url']}")
@@ -77,9 +97,8 @@ def main():
             df = result["dataframe"]
             print(f"Rows    : {result['rows']}")
             print(f"Columns : {len(result['columns'])}")
-
             print("\nPreview:")
-            print(df.head())   # show first 5 rows
+            print(df.head())
 
         print("=" * 80 + "\n")
 
