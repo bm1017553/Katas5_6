@@ -1,5 +1,6 @@
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import requests
+import os
 
 URLS = [
     "https://exoplanetarchive.ipac.caltech.edu/cgi-bin/nstedAPI/nph-nstedAPI?&table=exoplanets&format=ipac&where=pl_kepflag=1",
@@ -22,7 +23,7 @@ def fetch_url(url):
             "url": url,
             "status_code": response.status_code,
             "content_length": len(response.text),
-            "preview": response.text[:500]  # First 500 characters
+            "preview": response.text[:500]
         }
 
     except requests.exceptions.RequestException as e:
@@ -35,16 +36,20 @@ def fetch_url(url):
 def main():
     results = []
 
-    # Create a thread pool
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    # Dynamic thread pool sizing
+    cpu_count = os.cpu_count() or 1
+    max_workers = min(len(URLS), cpu_count * 5)
 
-        # Submit all tasks
+    print(f"CPU cores detected : {cpu_count}")
+    print(f"Thread pool size   : {max_workers}\n")
+
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+
         future_to_url = {
             executor.submit(fetch_url, url): url
             for url in URLS
         }
 
-        # Process results as they complete
         for future in as_completed(future_to_url):
             result = future.result()
             results.append(result)
